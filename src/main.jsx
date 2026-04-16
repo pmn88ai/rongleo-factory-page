@@ -10,12 +10,10 @@ import ThemeEditor     from './pages/ThemeEditor'
 import AnalyticsPage   from './pages/AnalyticsPage'
 import ProtectedRoute  from './components/ProtectedRoute'
 import { initGA }      from './lib/analytics'
-import { getConfig }   from './lib/supabase'
 import './index.css'
 
 // Init GA4 ngay khi app start — idempotent, safe nếu ID chưa có
-const _cfg = getConfig()
-initGA(_cfg.GA_MEASUREMENT_ID)
+initGA(import.meta.env.VITE_GA_ID)
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

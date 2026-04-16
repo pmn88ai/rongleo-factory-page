@@ -3,7 +3,6 @@
 // Uses GROQ if configured, demo mode otherwise.
 import { useState, useRef, useEffect } from 'react'
 import { trackEvent } from '../lib/analytics'
-import { getConfig } from '../lib/supabase'
 import styles from './Chatbot.module.css'
 
 const QUICK_QUESTIONS = [
@@ -95,37 +94,28 @@ export default function Chatbot({ property }) {
     setMessages(next)
     setLoading(true)
 
-    const { groq } = getConfig()
-
-    if (!groq) {
-      const key   = matchKey(msg)
-      const reply = buildDemoAnswer(key, p)
-      setTimeout(() => {
-        setMessages(prev => [...prev, { role: 'assistant', content: reply }])
-        setLoading(false)
-      }, 500)
-      return
-    }
-
+    // Call /api/chat — Groq key stays server-side (api/chat.js).
+    // Graceful fallback: if the route isn't available (plain vite dev) or
+    // the key isn't configured, we fall back to demo-mode answers.
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res  = await fetch('/api/chat', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groq}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model:      'llama3-8b-8192',
-          messages:   [{ role: 'system', content: buildSystemPrompt(p) }, ...next],
-          max_tokens: 300,
+          model:       'llama3-8b-8192',
+          messages:    [{ role: 'system', content: buildSystemPrompt(p) }, ...next],
+          max_tokens:  300,
           temperature: 0.55,
         }),
       })
       const data  = await res.json()
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`)
       const reply = data.choices?.[0]?.message?.content || 'Xin lỗi, có lỗi xảy ra.'
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
     } catch {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `Không kết nối được. Vui lòng gọi trực tiếp: ${p.contact?.phone || ''}`,
-      }])
+      // /api/chat unavailable (vite dev) or key not set → demo mode
+      const reply = buildDemoAnswer(matchKey(msg), p)
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
     } finally {
       setLoading(false)
     }

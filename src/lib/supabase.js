@@ -1,21 +1,32 @@
 // src/lib/supabase.js
-// Pure REST — no SDK. Reads config from localStorage.
+// Pure REST — no SDK.
+// Config priority: Vercel env vars (import.meta.env) → localStorage fallback.
 // Supabase is the SINGLE source of truth for all property data.
 
 // ── Config ──────────────────────────────────────────────────
+// ENV vars take priority so production works without opening /config.
+// localStorage remains for dev overrides and the /config fallback UI.
 export function getConfig() {
   try {
     return {
-      url:               localStorage.getItem('SUPABASE_URL')       || '',
-      key:               localStorage.getItem('SUPABASE_ANON_KEY')  || '',
-      groq:              localStorage.getItem('GROQ_API_KEY')       || '',
-      userId:            localStorage.getItem('USER_ID')            || 'RongLeo',
-      appId:             localStorage.getItem('APP_ID')             || 'factory_pages',
-      GA_MEASUREMENT_ID: localStorage.getItem('GA_MEASUREMENT_ID') || '',
+      url:               import.meta.env.VITE_SUPABASE_URL      || localStorage.getItem('SUPABASE_URL')       || '',
+      key:               import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('SUPABASE_ANON_KEY')  || '',
+      groq:              import.meta.env.VITE_GROQ_API_KEY      || localStorage.getItem('GROQ_API_KEY')       || '',
+      userId:                                                       localStorage.getItem('USER_ID')            || 'RongLeo',
+      appId:                                                        localStorage.getItem('APP_ID')             || 'factory_pages',
+      GA_MEASUREMENT_ID: import.meta.env.VITE_GA_ID             || localStorage.getItem('GA_MEASUREMENT_ID') || '',
       categories:        getCategories(),
     }
   } catch {
-    return { url: '', key: '', groq: '', userId: 'RongLeo', appId: 'factory_pages', GA_MEASUREMENT_ID: '', categories: getDefaultCategories() }
+    return {
+      url:               import.meta.env.VITE_SUPABASE_URL      || '',
+      key:               import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+      groq:              import.meta.env.VITE_GROQ_API_KEY      || '',
+      userId:            'RongLeo',
+      appId:             'factory_pages',
+      GA_MEASUREMENT_ID: import.meta.env.VITE_GA_ID             || '',
+      categories:        getDefaultCategories(),
+    }
   }
 }
 

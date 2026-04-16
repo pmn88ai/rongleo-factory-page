@@ -1,21 +1,29 @@
 // src/lib/analytics.js
 // GA4 + Supabase dual tracking.
-// GA Measurement ID đọc từ localStorage (không hardcode).
+// GA ID: ENV first (VITE_GA_ID), no localStorage read needed.
 // trackEvent() là entry point duy nhất — dùng ở mọi nơi.
-
 import { getConfig, isConfigured } from './supabase'
+
+// Read once at module load.
+// ENV takes priority; localStorage GA_MEASUREMENT_ID is the fallback so
+// ConfigPage manual overrides still work when VITE_GA_ID is absent.
+const { GA_MEASUREMENT_ID } = getConfig()
+const GA_ID       = import.meta.env.VITE_GA_ID || GA_MEASUREMENT_ID
+const FB_PIXEL_ID = import.meta.env.VITE_FB_PIXEL_ID
 
 // ── GA Init ──────────────────────────────────────────────────
 // Gọi 1 lần duy nhất khi app start (main.jsx).
 // Idempotent qua flag window.__GA_INIT.
 export function initGA(measurementId) {
-  if (!measurementId) return
-  if (window.__GA_INIT) return
-  window.__GA_INIT = true
+  const id = measurementId || GA_ID
+  if (!id) {
+  console.warn('[GA] Missing GA ID')
+  return
+}
 
   const script = document.createElement('script')
   script.async = true
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${id}`
   document.head.appendChild(script)
 
   window.dataLayer = window.dataLayer || []
@@ -23,7 +31,7 @@ export function initGA(measurementId) {
   window.gtag = gtag
 
   gtag('js', new Date())
-  gtag('config', measurementId, {
+  gtag('config', id, {
     send_page_view: false, // tự track, không để GA auto
   })
 }
@@ -84,10 +92,9 @@ export function trackEvent(type, payload = {}) {
   // FIX ⚠️1: bỏ qua nếu là duplicate trong TTL window
   if (isDupe(type, payload)) return
 
-  // GA4
+  // GA4 — use module-level GA_ID (ENV); no localStorage read at event time
   try {
-    const { GA_MEASUREMENT_ID } = getConfig()
-    if (window.gtag && GA_MEASUREMENT_ID) {
+    if (window.gtag && GA_ID) {
       window.gtag('event', type, payload)
     }
   } catch (e) {
