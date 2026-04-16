@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { trackEvent } from '../utils/analytics'
+import { trackEvent } from '../lib/analytics'
 import styles from './ContactBar.module.css'
 
 // FIX #2: "Xem sổ ngay" mở modal ảnh sổ thay vì gọi điện

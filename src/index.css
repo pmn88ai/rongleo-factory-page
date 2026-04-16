@@ -1,109 +1,110 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root {
-  --green-deep:  #0f1c2e;
-  --green-mid:   #1a3050;
-  --green-light: #2e4f7a;
-  --gold:        #a0aec0;
-  --gold-light:  #c8d6e5;
-  --gold-pale:   #e8eef5;
-  --cream:       #f0f4f8;
-  --white:       #ffffff;
-  --text-main:   #1a1a1a;
-  --text-muted:  #5a7080;
-  --border:      rgba(160,174,192, 0.25);
-  --shadow:      0 4px 32px rgba(15,28,46, 0.18);
+/* ══════════════════════════════════════
+   THEME TOKENS
+   Light: white + soft gold (không chói)
+   Dark:  #0f172a (xanh đen) + soft gold
+══════════════════════════════════════ */
+:root, [data-theme="light"] {
+  --bg:          #ffffff;
+  --bg-soft:     #faf8f2;
+  --bg-card:     #ffffff;
+  --bg-muted:    #f3f0e8;
+  --text:        #1a1a1a;
+  --text-muted:  #6b7280;
+  --text-faint:  #9ca3af;
+  --gold:        #b8922a;
+  --gold-light:  #d4a843;
+  --gold-pale:   #fdf3d8;
+  --gold-border: rgba(184,146,42,0.25);
+  --border:      rgba(0,0,0,0.08);
+  --shadow:      0 2px 16px rgba(0,0,0,0.07);
+  --shadow-md:   0 4px 32px rgba(0,0,0,0.10);
   --radius:      12px;
+  --hero-from:   #1a3050;
+  --hero-to:     #2e4f7a;
   --font-display: 'Playfair Display', Georgia, serif;
   --font-body:    'Be Vietnam Pro', sans-serif;
 }
 
+[data-theme="dark"] {
+  --bg:          #0f172a;
+  --bg-soft:     #0f172a;
+  --bg-card:     #1e293b;
+  --bg-muted:    #263348;
+  --text:        #f1f5f9;
+  --text-muted:  #94a3b8;
+  --text-faint:  #64748b;
+  --gold:        #c9a84c;
+  --gold-light:  #e0c97a;
+  --gold-pale:   rgba(201,168,76,0.10);
+  --gold-border: rgba(201,168,76,0.25);
+  --border:      rgba(255,255,255,0.07);
+  --shadow:      0 2px 16px rgba(0,0,0,0.4);
+  --shadow-md:   0 4px 32px rgba(0,0,0,0.5);
+  --radius:      12px;
+  --hero-from:   #0a1628;
+  --hero-to:     #1a3050;
+}
+
+/* ══════════════════════════════════════
+   BASE
+══════════════════════════════════════ */
 html { font-size: 16px; scroll-behavior: smooth; }
 
 body {
   font-family: var(--font-body);
-  background: var(--cream);
-  color: var(--text-main);
+  background: var(--bg);
+  color: var(--text);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  transition: background 0.2s, color 0.2s;
 }
 
 img { max-width: 100%; display: block; }
-a { color: inherit; text-decoration: none; }
-
-button {
-  font-family: var(--font-body);
-  cursor: pointer;
-  border: none;
-  outline: none;
-}
+a   { color: inherit; text-decoration: none; }
+button { font-family: var(--font-body); cursor: pointer; border: none; outline: none; }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--cream); }
-::-webkit-scrollbar-thumb { background: var(--green-light); border-radius: 3px; }
+::-webkit-scrollbar       { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--bg-muted); border-radius: 3px; }
 
 /* ══════════════════════════════════════
-   ADMIN PAGE — Mobile responsive
-   Split layout collapses on small screens
+   THEME TOGGLE BUTTON (shared)
+══════════════════════════════════════ */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.theme-toggle:hover { background: var(--bg-muted); color: var(--text); }
+
+/* ══════════════════════════════════════
+   ADMIN + MOBILE RESPONSIVE
 ══════════════════════════════════════ */
 @media (max-width: 768px) {
-  /* Admin split layout stacks vertically */
-  .admin-split {
-    flex-direction: column !important;
-    height: auto !important;
-  }
-
-  /* Form panel takes full width */
-  .admin-panel {
-    width: 100% !important;
-    max-height: 60vh;
-    border-right: none !important;
-    border-bottom: 1px solid var(--border);
-  }
-
-  /* Hide preview on mobile (too small to be useful) */
-  .admin-preview {
-    display: none !important;
-  }
-
-  /* Dashboard table → horizontal scroll */
-  .dashboard-table-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* Dashboard cards → single column */
-  .dashboard-cards {
-    grid-template-columns: 1fr !important;
-  }
-
-  /* Top bar links — hide less important ones on small screens */
-  .topbar-secondary {
-    display: none;
-  }
-
-  /* Config body — full padding */
-  .config-body {
-    padding: 16px 12px !important;
-  }
+  .admin-split        { flex-direction: column !important; height: auto !important; }
+  .admin-panel        { width: 100% !important; max-height: 60vh; border-right: none !important; border-bottom: 1px solid var(--border); }
+  .admin-preview      { display: none !important; }
+  .dashboard-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .dashboard-cards    { grid-template-columns: 1fr !important; }
+  .topbar-secondary   { display: none; }
+  .config-body        { padding: 16px 12px !important; }
 }
 
-/* Ensure tap targets are large enough on mobile */
 @media (max-width: 640px) {
-  button, a {
-    min-height: 36px;
-  }
-
-  /* Input fields — prevent iOS zoom on focus */
-  input, select, textarea {
-    font-size: 16px !important;
-  }
+  button, a { min-height: 36px; }
+  input, select, textarea { font-size: 16px !important; }
 }
 
-/* ══════════════════════════════════════
-   UTILITY — safe area for notched phones
-══════════════════════════════════════ */
-.sticky-bottom-bar {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
+.sticky-bottom-bar { padding-bottom: env(safe-area-inset-bottom, 0px); }

@@ -3,8 +3,9 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   fetchProperties, deleteProperty,
   isConfigured, testConnection,
-  getCategories,
+  getCategories, invalidatePropertyCache,
 } from '../lib/supabase'
+import { useTheme } from '../hooks/useTheme'
 
 const S = {
   page:   { minHeight: '100vh', background: 'var(--cream)', fontFamily: 'var(--font-body)' },
@@ -91,8 +92,16 @@ const S = {
     maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   statusDot: (status) => {
-    const map = { 'đang bán': '#16a34a', 'đã bán': '#dc2626', 'tạm dừng': '#d97706' }
+    const map = {
+      published: '#16a34a', 'đang bán': '#16a34a',
+      draft:     '#d97706', 'tạm dừng': '#d97706',
+      sold:      '#dc2626', 'đã bán':   '#dc2626',
+    }
     return { display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: map[status] || '#aaa', marginRight: 4 }
+  },
+  statusLabel: (s) => {
+    const map = { published: 'Đang bán', draft: 'Nháp', sold: 'Đã bán' }
+    return map[s] || s || '—'
   },
 }
 
@@ -117,6 +126,29 @@ function ConnectionBadge() {
   )
 }
 
+// ── Helpers to read new schema (with fallback to old flat columns) ──
+function getProp(item, key) {
+  switch (key) {
+    case 'title':   return item.public_data?.hero?.headline || item.title || '—'
+    case 'price':   return item.public_data?.price?.total   || item.price || '—'
+    case 'status':  return item.status || 'published'
+    case 'owner':   return item.private_data?.ownerName     || item.raw?.owner || ''
+    case 'thumb':   {
+      const gallery = item.public_data?.gallery
+      if (Array.isArray(gallery) && gallery[0]?.url) return gallery[0].url
+      const imgs = Array.isArray(item.images) ? item.images : []
+      return imgs[0] || ''
+    }
+    case 'imgCount': {
+      const gallery = item.public_data?.gallery
+      if (Array.isArray(gallery)) return gallery.length
+      return Array.isArray(item.images) ? item.images.length : 0
+    }
+    case 'location': return item.public_data?.mapEmbedUrl ? '📍' : (item.location || '')
+    default: return ''
+  }
+}
+
 export default function Dashboard() {
   const [categories, setCategories] = useState(() => getCategories())
   const [props, setProps]           = useState([])
@@ -126,6 +158,7 @@ export default function Dashboard() {
   const [search, setSearch]         = useState('')
   const [view, setView]             = useState('table')
   const [deleting, setDeleting]     = useState(null)
+  const { toggle, isDark }          = useTheme()
 
   const allCats = [{ value: 'all', label: 'Tất cả' }, ...categories]
 
@@ -145,17 +178,24 @@ export default function Dashboard() {
   }, [loadProps])
 
   async function handleDelete(item) {
+    const title    = getProp(item, 'title')
+    const imgCount = getProp(item, 'imgCount')
     if (!window.confirm(
-      `Xoá "${item.title || item.slug}"?\n\n` +
+      `Xoá "${title}"?\n\n` +
       `⚠️ Hành động này sẽ:\n` +
       `• Xoá record khỏi database\n` +
-      `• Xoá ${Array.isArray(item.images) ? item.images.length : 0} ảnh khỏi Storage\n\n` +
+      `• Xoá ${imgCount} ảnh khỏi Storage\n\n` +
       `Không thể hoàn tác.`
     )) return
 
     setDeleting(item.id)
     try {
-      await deleteProperty(item.id, Array.isArray(item.images) ? item.images : [])
+      // Collect all image URLs from both old and new schema
+      const oldImgs = Array.isArray(item.images) ? item.images : []
+      const newImgs = (item.public_data?.gallery || []).map(g => g.url).filter(Boolean)
+      const allImgs = [...new Set([...oldImgs, ...newImgs])]
+      await deleteProperty(item.id, allImgs)
+      invalidatePropertyCache(item.slug)
       setProps(prev => prev.filter(p => p.id !== item.id))
     } catch (e) {
       alert('Lỗi xoá: ' + e.message)
@@ -174,7 +214,10 @@ export default function Dashboard() {
     .filter(p => {
       if (!search) return true
       const q = search.toLowerCase()
-      return (p.slug||'').includes(q) || (p.title||'').includes(q) || (p.location||'').includes(q)
+      return (p.slug||'').includes(q)
+        || getProp(p, 'title').toLowerCase().includes(q)
+        || (p.location||'').includes(q)
+        || getProp(p, 'status').toLowerCase().includes(q)
     })
 
   return (
@@ -183,10 +226,11 @@ export default function Dashboard() {
         <span style={S.title}>📋 Dashboard</span>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <ConnectionBadge />
-          {/* Analytics link */}
           <a href="/analytics"  style={{ color: 'rgba(245,230,184,0.8)', fontSize: 12, textDecoration: 'underline', fontWeight: 600 }}>📊 Analytics</a>
           <a href="/config"     style={{ color: 'rgba(245,230,184,0.6)', fontSize: 12, textDecoration: 'underline' }}>⚙️ Config</a>
-          <a href="/theme-editor" style={{ color: 'rgba(245,230,184,0.5)', fontSize: 12, textDecoration: 'underline' }}>🎨 Theme</a>
+          <button className="theme-toggle" onClick={toggle} aria-label="Đổi theme" style={{ marginLeft: 4 }}>
+            {isDark ? '☀️' : '🌙'}
+          </button>
         </div>
       </div>
 
@@ -272,17 +316,19 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {filtered.map(item => {
-                  const imgs       = Array.isArray(item.images) ? item.images : []
-                  const owner      = item.raw?.owner  || ''
-                  const status     = item.raw?.status || ''
+                  const title      = getProp(item, 'title')
+                  const price      = getProp(item, 'price')
+                  const status     = getProp(item, 'status')
+                  const owner      = getProp(item, 'owner')
+                  const imgCount   = getProp(item, 'imgCount')
                   const isDeleting = deleting === item.id
                   return (
                     <tr key={item.id}
                       style={{ opacity: isDeleting ? 0.4 : 1, transition: 'opacity 0.2s' }}
-                      onMouseEnter={e => { if (!isDeleting) e.currentTarget.style.background = '#fafafa' }}
+                      onMouseEnter={e => { if (!isDeleting) e.currentTarget.style.background = 'var(--bg-soft)' }}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
-                      <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, color: '#444' }}>{item.slug}</td>
+                      <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>{item.slug}</td>
                       <td style={S.td}>
                         <span style={S.badge(item.category, categories)}>
                           {getCatLabel(item.category)}
@@ -290,37 +336,25 @@ export default function Dashboard() {
                       </td>
                       <td style={{ ...S.td, maxWidth: 200 }}>
                         <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.title || '—'}
+                          {title}
                         </div>
-                        {item.data && typeof item.data === 'object' && (
-                          <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
-                            {Object.entries(item.data).slice(0, 2).map(([k, v]) => (
-                              <span key={k} style={{ marginRight: 8 }}>
-                                {k}: <strong style={{ color: '#777' }}>{String(v)}</strong>
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </td>
-                      <td style={{ ...S.td, fontWeight: 700, color: 'var(--green-mid)', whiteSpace: 'nowrap' }}>
-                        {item.price || '—'}
+                      <td style={{ ...S.td, fontWeight: 700, color: 'var(--gold)', whiteSpace: 'nowrap' }}>
+                        {price}
                       </td>
                       <td style={{ ...S.td, whiteSpace: 'nowrap', fontSize: 12 }}>
-                        {status
-                          ? <span><span style={S.statusDot(status)} />{status}</span>
-                          : <span style={{ color: '#ddd' }}>—</span>
-                        }
+                        <span><span style={S.statusDot(status)} />{S.statusLabel(status)}</span>
                       </td>
                       <td style={S.td}>
                         {owner
                           ? <span style={S.ownerTag} title={owner}>👤 {owner}</span>
-                          : <span style={{ color: '#ddd', fontSize: 11 }}>—</span>
+                          : <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>—</span>
                         }
                       </td>
-                      <td style={{ ...S.td, fontSize: 12, color: imgs.length ? '#16a34a' : '#aaa' }}>
-                        {imgs.length ? `📸 ${imgs.length}` : '—'}
+                      <td style={{ ...S.td, fontSize: 12, color: imgCount > 0 ? '#16a34a' : 'var(--text-faint)' }}>
+                        {imgCount > 0 ? `📸 ${imgCount}` : '—'}
                       </td>
-                      <td style={{ ...S.td, fontSize: 11, color: '#aaa', whiteSpace: 'nowrap' }}>
+                      <td style={{ ...S.td, fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
                         {item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : '—'}
                       </td>
                       <td style={S.td}>
@@ -351,31 +385,30 @@ export default function Dashboard() {
         {!loading && filtered.length > 0 && view === 'cards' && (
           <div style={S.cardGrid}>
             {filtered.map(item => {
-              const imgs       = Array.isArray(item.images) ? item.images : []
-              const owner      = item.raw?.owner  || ''
-              const status     = item.raw?.status || ''
+              const title      = getProp(item, 'title')
+              const price      = getProp(item, 'price')
+              const status     = getProp(item, 'status')
+              const owner      = getProp(item, 'owner')
+              const thumb      = getProp(item, 'thumb')
               const isDeleting = deleting === item.id
               return (
                 <div key={item.id} style={{ ...S.card, opacity: isDeleting ? 0.4 : 1, transition: 'opacity 0.2s' }}>
-                  {imgs[0]
-                    ? <img src={imgs[0]} alt={item.title} style={{ width: '100%', height: 160, objectFit: 'cover' }} />
-                    : <div style={{ height: 100, background: '#f0f4f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>🏕</div>
+                  {thumb
+                    ? <img src={thumb} alt={title} loading="lazy" style={{ width: '100%', height: 160, objectFit: 'cover' }} />
+                    : <div style={{ height: 100, background: 'var(--bg-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>🏕</div>
                   }
                   <div style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, gap: 6 }}>
                       <span style={S.badge(item.category, categories)}>{getCatLabel(item.category)}</span>
-                      <span style={{ fontSize: 11, color: '#aaa', fontFamily: 'monospace' }}>{item.slug}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.slug}</span>
                     </div>
-                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{item.title || '—'}</div>
-                    <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>{item.location || '—'}</div>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--text)' }}>{title}</div>
 
                     {/* Status + Owner */}
                     <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                      {status && (
-                        <span style={{ fontSize: 11, color: '#555' }}>
-                          <span style={S.statusDot(status)} />{status}
-                        </span>
-                      )}
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        <span style={S.statusDot(status)} />{S.statusLabel(status)}
+                      </span>
                       {owner && (
                         <span style={{ fontSize: 11, color: '#0369a1', fontWeight: 600 }}>
                           👤 {owner}
@@ -383,23 +416,8 @@ export default function Dashboard() {
                       )}
                     </div>
 
-                    {item.data && typeof item.data === 'object' && Object.keys(item.data).length > 0 && (
-                      <div style={{
-                        fontSize: 11, color: '#888', marginBottom: 8,
-                        padding: '6px 8px', background: '#f9fafb',
-                        borderRadius: 6, border: '1px solid rgba(0,0,0,0.05)',
-                      }}>
-                        {Object.entries(item.data).slice(0, 3).map(([k, v]) => (
-                          <div key={k} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ color: '#aaa' }}>{k}</span>
-                            <span style={{ fontWeight: 600, color: '#555' }}>{String(v)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--green-mid)', marginBottom: 12 }}>
-                      {item.price || '—'}
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--gold)', marginBottom: 12 }}>
+                      {price}
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button style={{ ...S.actionBtn('#2563eb'), flex: 1 }}

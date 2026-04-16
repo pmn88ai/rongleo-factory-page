@@ -58,14 +58,25 @@ export function saveCategories(cats) {
 }
 
 // ── Slug normalization ───────────────────────────────────────
-export function normalizeSlug(str) {
-  return (str || '')
+// Handles Vietnamese fully:
+//   "Cao Lãnh 120m²"  → "cao-lanh-120m"
+//   "Đất thổ cư đẹp"  → "dat-tho-cu-dep"
+//   "đường Nguyễn..."  → "duong-nguyen"
+// Steps: lowercase → strip combining marks → đ→d → keep a-z0-9 → spaces/special→dash → dedup → trim
+export function normalizeSlug(str = '') {
+  return str
     .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')   // bỏ dấu (à→a, ổ→o, ...)
+    .replace(/đ/gi, 'd')               // đ không decompose bằng NFD, xử lý riêng
+    .replace(/[^a-z0-9\s-]/g, '')      // xóa ký tự đặc biệt, giữ space và dash
     .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-|-$/g, '')
+    .replace(/[\s-]+/g, '-')           // space / multiple dashes → single dash
+    .replace(/^-|-$/g, '')             // bỏ dash đầu/cuối
+}
+
+export function isValidSlug(str) {
+  return /^[a-z0-9-]+$/.test(str) && str.length > 0
 }
 
 // ── Storage URL checks ───────────────────────────────────────
@@ -144,23 +155,49 @@ export async function fetchProperties() {
   return rest('/properties?order=created_at.desc&select=*')
 }
 
+// ── Simple in-memory cache (5 min TTL) ──────────────────────
+const _slugCache = new Map()
+const CACHE_TTL  = 5 * 60 * 1000
+
 export async function fetchPropertyBySlug(slug) {
   const normalized = normalizeSlug(slug)
+  const cached = _slugCache.get(normalized)
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data
+
   const rows = await rest(
     `/properties?slug=eq.${encodeURIComponent(normalized)}&select=*&limit=1`
   )
-  return rows?.[0] || null
+  const data = rows?.[0] || null
+  _slugCache.set(normalized, { data, ts: Date.now() })
+  return data
+}
+
+export function invalidatePropertyCache(slug) {
+  if (slug) _slugCache.delete(normalizeSlug(slug))
+  else      _slugCache.clear()
 }
 
 export async function upsertProperty(data) {
-  const payload = { ...data, slug: normalizeSlug(data.slug) }
-  if (!payload.slug)  throw new Error('slug là bắt buộc')
-  if (!payload.title) throw new Error('title là bắt buộc')
-  return rest('/properties?on_conflict=slug', {
+  const slug = normalizeSlug(data.slug)
+  if (!slug) throw new Error('slug là bắt buộc')
+
+  // Derive title from public_data for backward compat
+  const title = data.public_data?.hero?.headline || data.title || slug
+
+  const payload = {
+    ...data,
+    slug,
+    title,
+    updated_at: new Date().toISOString(),
+  }
+
+  const result = await rest('/properties?on_conflict=slug', {
     method: 'POST',
     body:   JSON.stringify(payload),
-    headers: buildHeaders({ 'Prefer': 'return=representation,resolution=merge-duplicates' }),
+    headers: buildHeaders({ Prefer: 'return=representation,resolution=merge-duplicates' }),
   })
+  invalidatePropertyCache(slug) // bust cache after write
+  return result
 }
 
 export async function deleteProperty(id, imageUrls = []) {
@@ -176,9 +213,18 @@ export async function deleteProperty(id, imageUrls = []) {
 }
 
 // ── Storage ─────────────────────────────────────────────────
+const MAX_UPLOAD_BYTES = 3 * 1024 * 1024 // 3 MB
+
 async function uploadToBucket(file, bucket) {
   const { url, key } = getConfig()
   if (!url || !key) throw new Error('Supabase chưa được cấu hình')
+
+  // ⚡ Size guard — reject before any network call
+  if (file.size > MAX_UPLOAD_BYTES) {
+    const mb = (file.size / 1024 / 1024).toFixed(1)
+    throw new Error(`Ảnh quá lớn: ${mb}MB. Tối đa 3MB — hãy nén ảnh trước khi upload.`)
+  }
+
   const ext      = (file.name || 'img').split('.').pop().toLowerCase() || 'jpg'
   const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
   const res = await fetch(`${url}/storage/v1/object/${bucket}/${filename}`, {
@@ -206,6 +252,31 @@ export async function deleteStorageImages(urls = [], bucket = 'assets') {
   })
   if (!res.ok) { const text = await res.text(); throw new Error(`Storage delete failed ${res.status}: ${text}`) }
   return res.json()
+}
+
+// ── App Config ──────────────────────────────────────────────
+const DEFAULT_APP_CONFIG = {
+  logoUrl:    '',
+  brandName:  'Land Dossier',
+  slogan:     'Hồ sơ đất chuyên nghiệp — minh bạch — đáng tin cậy',
+  footerText: '© 2024 Land Dossier. Thông tin mang tính tham khảo.',
+}
+
+export async function fetchAppConfig() {
+  try {
+    const rows = await rest('/app_config?select=*&limit=1')
+    if (rows?.[0]) return { ...DEFAULT_APP_CONFIG, ...rows[0] }
+  } catch { /* fall through */ }
+  return DEFAULT_APP_CONFIG
+}
+
+export async function upsertAppConfig(data) {
+  // app_config is a single-row table — upsert by id=1
+  return rest('/app_config?on_conflict=id', {
+    method: 'POST',
+    body:   JSON.stringify({ id: 1, ...data }),
+    headers: buildHeaders({ Prefer: 'return=representation,resolution=merge-duplicates' }),
+  })
 }
 
 // ── Connection test ──────────────────────────────────────────

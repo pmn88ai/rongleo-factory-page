@@ -106,6 +106,20 @@ export function trackEvent(type, payload = {}) {
   } catch (_) {}
 }
 
+// ── FB Pixel helper ──────────────────────────────────────────
+// Fire-and-forget. Safe when Pixel is not loaded (no fbq on page).
+// Standard FB events: ViewContent, Contact, Lead, Purchase, ...
+// payload keys: content_ids[], content_name, content_type, value, currency
+export function trackFB(event, payload = {}) {
+  try {
+    if (typeof window !== 'undefined' && typeof window.fbq === 'function') {
+      window.fbq('track', event, payload)
+    }
+  } catch (e) {
+    console.warn('[analytics] FB Pixel error:', e.message)
+  }
+}
+
 // ── FIX ⚠️3: fetchEvents — limit 500, không fetch all ───────
 // Default 500 thay vì 1000, caller có thể override.
 // Query luôn order desc → lấy events mới nhất.
