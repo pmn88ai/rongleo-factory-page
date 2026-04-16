@@ -13,6 +13,8 @@ import {
   normalizeSlug, isValidSlug, isConfigured,
 } from '../lib/supabase'
 import { useTheme } from '../hooks/useTheme'
+import { resizeImage } from '../lib/imageResize'
+import RawLibraryModal from '../components/RawLibraryModal'
 import LandPage from './LandPage'
 import S from './AdminPage.module.css'
 
@@ -91,21 +93,14 @@ function ImageGrid({ images = [], onDelete, uploadFn, bucket = 'assets' }) {
     if (!files.length) return
     const fileArr = Array.from(files)
 
-    // Check 3 MB limit upfront (supabase.js also checks, but give immediate UI feedback)
-    const oversized = fileArr.filter(f => f.size > 3 * 1024 * 1024)
-    if (oversized.length) {
-      const names = oversized.map(f => `${f.name} (${(f.size/1024/1024).toFixed(1)}MB)`).join(', ')
-      alert(`Ảnh quá lớn (max 3MB):\n${names}\n\nHãy nén ảnh trước khi upload.`)
-      return
-    }
-
     // Mark all as uploading
     const init = Object.fromEntries(fileArr.map(f => [f.name, 'uploading']))
     setFileStates(init)
 
     const results = await Promise.allSettled(fileArr.map(async f => {
       try {
-        const url = await uploadFn(f)
+        const resized = await resizeImage(f)   // compress + resize before upload
+        const url     = await uploadFn(resized)
         setFileStates(prev => { const n = { ...prev }; delete n[f.name]; return n })
         return url
       } catch (e) {
@@ -275,6 +270,7 @@ export default function AdminPage() {
   const [saveMsg,   setSaveMsg]   = useState('')
   const [loadState, setLoadState] = useState('idle')
   const [showPrivate, setShowPrivate] = useState(false)
+  const [showRawLib,  setShowRawLib]  = useState(false)
 
   const { toggle, isDark } = useTheme()
   const slugPreview = normalizeSlug(slugRaw)
@@ -313,6 +309,20 @@ export default function AdminPage() {
 
   function updatePriv(key, value) {
     setPriv(prev => ({ ...prev, [key]: value }))
+  }
+
+  // ── Raw library confirm — append selected URLs into gallery ──
+  function handleRawLibConfirm(urls) {
+    if (!urls.length) return
+    const existingUrls = new Set((pub.gallery || []).map(g => g.url))
+    const newItems = urls
+      .filter(u => !existingUrls.has(u))
+      .map(u => ({
+        url:  u,
+        type: /\.(mp4|webm|mov)$/i.test(u) ? 'video' : 'image',
+      }))
+    if (!newItems.length) return
+    updatePub('gallery', [...(pub.gallery || []), ...newItems])
   }
 
   // ── Gallery helpers ──
@@ -525,6 +535,13 @@ export default function AdminPage() {
               uploadFn={uploadImage}
               onDelete={(url, newUrls) => galleryDelete(url, newUrls)}
             />
+            <button
+              className={S.uploadBtn}
+              style={{ marginTop: 6 }}
+              onClick={() => setShowRawLib(true)}
+            >
+              📁 Chọn từ thư viện raw
+            </button>
           </Section>
 
           {/* A4: Pháp lý */}
@@ -722,6 +739,13 @@ export default function AdminPage() {
         </div>
 
       </div>{/* /split */}
+
+      {showRawLib && (
+        <RawLibraryModal
+          onConfirm={handleRawLibConfirm}
+          onClose={() => setShowRawLib(false)}
+        />
+      )}
     </div>
   )
 }

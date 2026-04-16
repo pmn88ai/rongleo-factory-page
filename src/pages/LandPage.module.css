@@ -454,6 +454,45 @@
 .floatCall { background: var(--gold); color: var(--hero-from); }
 .floatZalo { background: #0068ff; color: #fff; }
 
+/* ── Sticky bottom CTA bar — mobile only ── */
+.stickyBar {
+  display: none;  /* desktop: use .floating circles instead */
+}
+
+@media (max-width: 767px) {
+  .stickyBar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 54px;
+    z-index: 600;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.18);
+  }
+  /* push page content so last section isn't hidden under the bar */
+  .page { padding-bottom: 54px; }
+  /* hide floating circles on mobile — sticky bar replaces them */
+  .floating { display: none; }
+}
+
+.stickyBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+}
+
+.stickyCall { background: var(--gold);  color: var(--hero-from); }
+.stickyZalo { background: #0068ff;      color: #fff; }
+
 /* ── Footer ── */
 .footer {
   background: var(--hero-from);

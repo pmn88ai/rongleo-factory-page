@@ -239,6 +239,48 @@ async function uploadToBucket(file, bucket) {
 export async function uploadImage(file)    { return uploadToBucket(file, 'assets') }
 export async function uploadRawImage(file) { return uploadToBucket(file, 'raw-assets') }
 
+// ── Public URL helper ─────────────────────────────────────────
+export function getPublicUrl(bucket, path) {
+  const { url } = getConfig()
+  return `${url}/storage/v1/object/public/${bucket}/${path}`
+}
+
+// ── List files already in a bucket (no re-upload) ────────────
+// Returns [{ name, url, size, mime, createdAt }]
+// Folders are filtered out (size === 0 or missing metadata).
+export async function listStorageFiles(bucket, { offset = 0, limit = 50 } = {}) {
+  const { url, key } = getConfig()
+  if (!url || !key) throw new Error('Supabase chưa được cấu hình')
+
+  const res = await fetch(`${url}/storage/v1/object/list/${bucket}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'apikey':         key,
+      'Authorization': `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      prefix:  '',
+      limit,
+      offset,
+      sortBy: { column: 'created_at', order: 'desc' },
+    }),
+  })
+
+  if (!res.ok) { const t = await res.text(); throw new Error(`Storage list ${res.status}: ${t}`) }
+
+  const data = await res.json()
+  return (data || [])
+    .filter(f => f.name && f.metadata?.size > 0)   // folders have no metadata or size=0
+    .map(f => ({
+      name:      f.name,
+      url:       getPublicUrl(bucket, f.name),
+      size:      f.metadata.size,
+      mime:      f.metadata.mimetype || '',
+      createdAt: f.created_at       || '',
+    }))
+}
+
 export async function deleteStorageImages(urls = [], bucket = 'assets') {
   const { url, key } = getConfig()
   if (!url || !key) return

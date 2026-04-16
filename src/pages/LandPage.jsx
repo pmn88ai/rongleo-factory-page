@@ -382,6 +382,26 @@ function FloatingContact({ contact, onCall, onZalo }) {
   )
 }
 
+// Sticky bottom bar — visible on mobile, hides on desktop (floating handles that)
+function StickyBar({ contact, onCall, onZalo }) {
+  if (!contact.phone) return null
+  return (
+    <div className={S.stickyBar}>
+      <a href={`tel:${contact.phone}`} className={`${S.stickyBtn} ${S.stickyCall}`} onClick={onCall}>
+        📞 Gọi ngay
+      </a>
+      <a
+        href={contact.zalo || `https://zalo.me/${contact.phone}`}
+        target="_blank" rel="noopener noreferrer"
+        className={`${S.stickyBtn} ${S.stickyZalo}`}
+        onClick={onZalo}
+      >
+        💬 Chat Zalo
+      </a>
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────
@@ -420,7 +440,22 @@ export default function LandPage({ previewData }) {
 
       setProperty(row)
       setStatus('ok')
-      trackEvent('view_item', { slug })
+
+      const pd = row.public_data || {}
+      trackEvent('page_view', { slug, category: 'land' })
+      trackEvent('view_item', {
+        slug,
+        category: 'land',
+        price:    pd.price?.total || '',
+        area:     pd.price?.area  || 0,
+      })
+      trackFB('ViewContent', {
+        content_ids:  [slug],
+        content_type: 'land',
+        content_name: pd.hero?.headline || slug,
+        value:        pd.price?.pricePerM2 || 0,
+        currency:     'VND',
+      })
     }).catch(() => setStatus('notfound'))
   }, [slug, previewData])
 
@@ -430,8 +465,14 @@ export default function LandPage({ previewData }) {
     fetchAppConfig().then(setConfig)
   }, [previewData, config])
 
-  function handleCall()  { trackEvent('click_call',  { slug }) }
-  function handleZalo()  { trackEvent('click_zalo',  { slug }) }
+  function handleCall() {
+    trackEvent('click_call', { slug })
+    trackFB('Contact', { content_ids: [slug], method: 'call' })
+  }
+  function handleZalo() {
+    trackEvent('click_zalo', { slug })
+    trackFB('Contact', { content_ids: [slug], method: 'zalo' })
+  }
 
   // ── Loading ──
   if (status === 'loading') {
@@ -466,14 +507,16 @@ export default function LandPage({ previewData }) {
     <div className={S.page}>
       <SiteHeader config={appCfg} toggle={toggle} isDark={isDark} />
 
-      <HeroSection pub={pub} onCall={handleCall} onZalo={handleZalo} />
-      <WhyBuyNow   pub={pub} />
-      <CoreInfo    pub={pub} />
-      <ProofSection pub={pub} />
-      <ComparisonSection pub={pub} />
-      <PotentialSection  pub={pub} />
-      <MapSection        pub={pub} />
-      <FinalCTA pub={pub} onCall={handleCall} onZalo={handleZalo} />
+      <ErrorBoundary>
+        <HeroSection pub={pub} onCall={handleCall} onZalo={handleZalo} />
+        <WhyBuyNow   pub={pub} />
+        <CoreInfo    pub={pub} />
+        <ProofSection pub={pub} />
+        <ComparisonSection pub={pub} />
+        <PotentialSection  pub={pub} />
+        <MapSection        pub={pub} />
+        <FinalCTA pub={pub} onCall={handleCall} onZalo={handleZalo} />
+      </ErrorBoundary>
 
       <footer className={S.footer}>
         <div className={S.footerBrand}>{appCfg.brandName}</div>
@@ -481,6 +524,7 @@ export default function LandPage({ previewData }) {
       </footer>
 
       <FloatingContact contact={pub.contact} onCall={handleCall} onZalo={handleZalo} />
+      <StickyBar contact={pub.contact} onCall={handleCall} onZalo={handleZalo} />
 
       {!previewData && (
         <Chatbot property={{
