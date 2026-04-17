@@ -37,6 +37,7 @@ const EMPTY_PUBLIC = {
 const EMPTY_PRIVATE = {
   ownerName:   '',
   ownerPhone:  '',
+  ownerNote:   '',
   commission:  0,
   notesHtml:   '',
   brokerLogs:  [],
@@ -196,28 +197,52 @@ function BadgeEditor({ badges = [], onChange }) {
 }
 
 function ComparisonEditor({ rows = [], onChange }) {
-  const [label, setLabel]   = useState('')
-  const [price, setPrice]   = useState('')
+  const [location,   setLocation]   = useState('')
+  const [type,       setType]       = useState('')
+  const [area,       setArea]       = useState('')
+  const [totalPrice, setTotalPrice] = useState('')
+  const [pricePerM2, setPricePerM2] = useState('')
+
   function add() {
-    if (!label.trim()) return
-    onChange([...rows, { label: label.trim(), pricePerM2: Number(price) || 0 }])
-    setLabel(''); setPrice('')
+    if (!location.trim()) return
+    onChange([...rows, {
+      location:   location.trim(),
+      type:       type.trim(),
+      area:       Number(area) || 0,
+      totalPrice: Number(totalPrice) || 0,
+      pricePerM2: Number(pricePerM2) || 0,
+    }])
+    setLocation(''); setType(''); setArea(''); setTotalPrice(''); setPricePerM2('')
   }
+
   return (
     <div>
       {rows.map((r, i) => (
         <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-          <span style={{ flex: 1, fontSize: '0.82rem', color: 'var(--text)' }}>{r.label}</span>
-          <span style={{ fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 600 }}>{r.pricePerM2} tr/m²</span>
+          <span style={{ flex: 1, fontSize: '0.82rem', color: 'var(--text)' }}>
+            {r.location || r.label}
+          </span>
+          {r.area > 0 && <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{r.area}m²</span>}
+          {r.pricePerM2 > 0 && <span style={{ fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 600 }}>{r.pricePerM2} tr/m²</span>}
           <button className={S.chipDel} onClick={() => onChange(rows.filter((_, j) => j !== i))}>✕</button>
         </div>
       ))}
-      <div className={S.addRow}>
-        <input className={S.addInput} placeholder="Vị trí / lô đối chiếu"
-          value={label} onChange={e => setLabel(e.target.value)} />
-        <input className={S.addInput} style={{ width: 80 }} placeholder="tr/m²"
-          type="number" value={price} onChange={e => setPrice(e.target.value)} />
-        <button className={S.addBtn} onClick={add}>+</button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+        <div className={S.addRow}>
+          <input className={S.addInput} placeholder="Vị trí / Mô tả lô *"
+            value={location} onChange={e => setLocation(e.target.value)} />
+          <input className={S.addInput} style={{ width: 90 }} placeholder="Loại đất"
+            value={type} onChange={e => setType(e.target.value)} />
+        </div>
+        <div className={S.addRow}>
+          <input className={S.addInput} style={{ width: 72 }} placeholder="Dt m²"
+            type="number" value={area} onChange={e => setArea(e.target.value)} />
+          <input className={S.addInput} style={{ width: 80 }} placeholder="Tổng (tỷ)"
+            type="number" value={totalPrice} onChange={e => setTotalPrice(e.target.value)} />
+          <input className={S.addInput} style={{ width: 72 }} placeholder="tr/m²"
+            type="number" value={pricePerM2} onChange={e => setPricePerM2(e.target.value)} />
+          <button className={S.addBtn} onClick={add}>+</button>
+        </div>
       </div>
     </div>
   )
@@ -269,8 +294,9 @@ export default function AdminPage() {
   const [saveState, setSaveState] = useState('idle') // 'idle'|'saving'|'ok'|'err'
   const [saveMsg,   setSaveMsg]   = useState('')
   const [loadState, setLoadState] = useState('idle')
-  const [showPrivate, setShowPrivate] = useState(false)
-  const [showRawLib,  setShowRawLib]  = useState(false)
+  const [showPrivate,  setShowPrivate]  = useState(false)
+  // rawLibTarget: null | 'gallery' | 'proof.redBookImages' | 'proof.planningImages' | 'potential.images'
+  const [rawLibTarget, setRawLibTarget] = useState(null)
 
   const { toggle, isDark } = useTheme()
   const slugPreview = normalizeSlug(slugRaw)
@@ -311,18 +337,29 @@ export default function AdminPage() {
     setPriv(prev => ({ ...prev, [key]: value }))
   }
 
-  // ── Raw library confirm — append selected URLs into gallery ──
+  // ── Raw library confirm — route by rawLibTarget ──
   function handleRawLibConfirm(urls) {
-    if (!urls.length) return
-    const existingUrls = new Set((pub.gallery || []).map(g => g.url))
-    const newItems = urls
-      .filter(u => !existingUrls.has(u))
-      .map(u => ({
-        url:  u,
-        type: /\.(mp4|webm|mov)$/i.test(u) ? 'video' : 'image',
+    if (!urls.length || !rawLibTarget) return
+    if (rawLibTarget === 'gallery') {
+      const existingUrls = new Set((pub.gallery || []).map(g => g.url))
+      const newItems = urls.filter(u => !existingUrls.has(u)).map(u => ({
+        url: u, type: /\.(mp4|webm|mov)$/i.test(u) ? 'video' : 'image',
       }))
-    if (!newItems.length) return
-    updatePub('gallery', [...(pub.gallery || []), ...newItems])
+      if (newItems.length) updatePub('gallery', [...(pub.gallery || []), ...newItems])
+    } else if (rawLibTarget === 'proof.redBookImages') {
+      const existing = new Set(pub.proof.redBookImages || [])
+      const newUrls  = urls.filter(u => !existing.has(u))
+      if (newUrls.length) updatePub('proof.redBookImages', [...(pub.proof.redBookImages || []), ...newUrls])
+    } else if (rawLibTarget === 'proof.planningImages') {
+      const existing = new Set(pub.proof.planningImages || [])
+      const newUrls  = urls.filter(u => !existing.has(u))
+      if (newUrls.length) updatePub('proof.planningImages', [...(pub.proof.planningImages || []), ...newUrls])
+    } else if (rawLibTarget === 'potential.images') {
+      const existing = new Set(pub.potential?.images || [])
+      const newUrls  = urls.filter(u => !existing.has(u))
+      if (newUrls.length) updatePub('potential.images', [...(pub.potential?.images || []), ...newUrls])
+    }
+    setRawLibTarget(null)
   }
 
   // ── Gallery helpers ──
@@ -414,6 +451,7 @@ export default function AdminPage() {
 
       {/* ── Top bar ── */}
       <div className={S.topBar}>
+        <button className={S.backBtn} onClick={() => window.history.back()}>← Quay lại</button>
         <span className={S.topBarTitle}>🏕 Admin</span>
 
         {/* Slug input with preview */}
@@ -535,11 +573,8 @@ export default function AdminPage() {
               uploadFn={uploadImage}
               onDelete={(url, newUrls) => galleryDelete(url, newUrls)}
             />
-            <button
-              className={S.uploadBtn}
-              style={{ marginTop: 6 }}
-              onClick={() => setShowRawLib(true)}
-            >
+            <button className={S.uploadBtn} style={{ marginTop: 6 }}
+              onClick={() => setRawLibTarget('gallery')}>
               📁 Chọn từ thư viện raw
             </button>
           </Section>
@@ -573,6 +608,10 @@ export default function AdminPage() {
                 uploadFn={uploadImage}
                 onDelete={(url, newUrls) => proofDelete('redBookImages', url, newUrls)}
               />
+              <button className={S.uploadBtn} style={{ marginTop: 6 }}
+                onClick={() => setRawLibTarget('proof.redBookImages')}>
+                📁 Chọn từ thư viện raw
+              </button>
             </Field>
             <Field label="Ảnh quy hoạch">
               <ImageGrid
@@ -580,6 +619,10 @@ export default function AdminPage() {
                 uploadFn={uploadImage}
                 onDelete={(url, newUrls) => proofDelete('planningImages', url, newUrls)}
               />
+              <button className={S.uploadBtn} style={{ marginTop: 6 }}
+                onClick={() => setRawLibTarget('proof.planningImages')}>
+                📁 Chọn từ thư viện raw
+              </button>
             </Field>
             <Field label="Ghi chú quy hoạch">
               <textarea className={S.textarea}
@@ -611,6 +654,10 @@ export default function AdminPage() {
                 uploadFn={uploadImage}
                 onDelete={(url, newUrls) => potentialImgDelete(url, newUrls)}
               />
+              <button className={S.uploadBtn} style={{ marginTop: 6 }}
+                onClick={() => setRawLibTarget('potential.images')}>
+                📁 Chọn từ thư viện raw
+              </button>
             </Field>
           </Section>
 
@@ -686,6 +733,12 @@ export default function AdminPage() {
                     onChange={e => updatePriv('commission', Number(e.target.value))}
                     placeholder="Vd: 2" />
                 </Field>
+                <Field label="Ghi chú về chủ đất">
+                  <textarea className={S.textarea} style={{ minHeight: 80 }}
+                    value={priv.ownerNote || ''}
+                    onChange={e => updatePriv('ownerNote', e.target.value)}
+                    placeholder="Tính cách, yêu cầu đặc biệt, thời gian liên hệ phù hợp..." />
+                </Field>
               </Section>
 
               <Section icon="📝" title="Ghi chú nội bộ">
@@ -740,10 +793,10 @@ export default function AdminPage() {
 
       </div>{/* /split */}
 
-      {showRawLib && (
+      {rawLibTarget && (
         <RawLibraryModal
           onConfirm={handleRawLibConfirm}
-          onClose={() => setShowRawLib(false)}
+          onClose={() => setRawLibTarget(null)}
         />
       )}
     </div>

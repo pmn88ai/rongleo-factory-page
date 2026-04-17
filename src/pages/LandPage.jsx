@@ -65,6 +65,20 @@ function extractWhyPoints(text = '') {
 // SUB-COMPONENTS
 // ─────────────────────────────────────────
 
+function Lightbox({ src, onClose }) {
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className={S.lightboxOverlay} onClick={onClose}>
+      <img src={src} alt="" className={S.lightboxImg} onClick={e => e.stopPropagation()} />
+      <button className={S.lightboxClose} onClick={onClose} aria-label="Đóng">✕</button>
+    </div>
+  )
+}
+
 function SiteHeader({ config, toggle, isDark }) {
   return (
     <header className={S.siteHeader}>
@@ -94,12 +108,21 @@ function SiteHeader({ config, toggle, isDark }) {
 
 function HeroSection({ pub, onCall, onZalo }) {
   const { hero, price, gallery, contact } = pub
-  const heroImg = gallery?.find(g => g.type === 'image') || gallery?.[0]
+  const slides = (gallery || []).filter(g => g.url)
 
   return (
     <section className={S.hero}>
-      {heroImg?.url && (
-        <img src={heroImg.url} alt={hero.headline} className={S.heroImg} fetchpriority="high" decoding="async" />
+      {slides.length > 0 && (
+        <div className={S.heroSlider}>
+          {slides.map((slide, i) =>
+            slide.type === 'video'
+              ? <video key={i} src={slide.url} className={S.heroSlideMedia}
+                  autoPlay muted loop playsInline />
+              : <img key={i} src={slide.url} alt={hero.headline} className={S.heroSlideMedia}
+                  fetchpriority={i === 0 ? 'high' : 'auto'} decoding="async"
+                  loading={i === 0 ? 'eager' : 'lazy'} />
+          )}
+        </div>
       )}
       <div className={S.heroBody}>
         {hero.badges?.length > 0 && (
@@ -221,7 +244,7 @@ function CoreInfo({ pub }) {
   )
 }
 
-function ProofSection({ pub }) {
+function ProofSection({ pub, onImgClick }) {
   const [activeTab, setActiveTab] = useState(0)
   const { proof } = pub
 
@@ -252,7 +275,8 @@ function ProofSection({ pub }) {
         {active.images.length > 0 && (
           <div className={S.proofImages}>
             {active.images.map((url, i) => (
-              <img key={i} src={url} alt={`${active.label} ${i + 1}`} className={S.proofImg} loading="lazy" />
+              <img key={i} src={url} alt={`${active.label} ${i + 1}`} className={S.proofImg} loading="lazy"
+                onClick={() => onImgClick?.(url)} />
             ))}
           </div>
         )}
@@ -268,40 +292,57 @@ function ComparisonSection({ pub }) {
 
   const rows = comparison?.length
     ? comparison
-    : [{ label: 'Lô này', pricePerM2: price.pricePerM2, isThis: true }]
+    : [{ location: 'Lô này', pricePerM2: price.pricePerM2, isThis: true }]
+
+  // Detect if any row has expanded fields
+  const hasExpanded = rows.some(r => r.area > 0 || r.totalPrice > 0 || r.type)
 
   return (
     <section className={S.section} style={{ background: 'var(--bg-soft)' }}>
       <div className={S.inner}>
         <h2 className={S.sectionTitle}>📊 So sánh giá khu vực</h2>
-        <table className={S.compTable}>
-          <thead>
-            <tr>
-              <th>Vị trí / Lô đất</th>
-              <th style={{ textAlign: 'right' }}>Giá (tr/m²)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className={r.isThis || r.label === 'Lô này' ? S.thisLot : ''}>
-                <td>{r.label}</td>
-                <td style={{ textAlign: 'right' }} className={S.compPrice}>{r.pricePerM2}</td>
+        <div style={{ overflowX: 'auto' }}>
+          <table className={S.compTable}>
+            <thead>
+              <tr>
+                <th>Vị trí / Lô đất</th>
+                {hasExpanded && <th>Loại đất</th>}
+                {hasExpanded && <th style={{ textAlign: 'right' }}>Diện tích</th>}
+                {hasExpanded && <th style={{ textAlign: 'right' }}>Tổng giá</th>}
+                <th style={{ textAlign: 'right' }}>Giá (tr/m²)</th>
               </tr>
-            ))}
-            {comparison?.length > 0 && price.pricePerM2 && (
-              <tr className={S.thisLot}>
-                <td>🏷️ Lô này</td>
-                <td style={{ textAlign: 'right' }} className={S.compPrice}>{price.pricePerM2}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const isHighlight = r.isThis || r.label === 'Lô này'
+                return (
+                  <tr key={i} className={isHighlight ? S.thisLot : ''}>
+                    <td>{r.location || r.label}</td>
+                    {hasExpanded && <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{r.type || '—'}</td>}
+                    {hasExpanded && <td style={{ textAlign: 'right', fontSize: '0.82rem' }}>{r.area > 0 ? `${r.area} m²` : '—'}</td>}
+                    {hasExpanded && <td style={{ textAlign: 'right', fontSize: '0.82rem' }}>{r.totalPrice > 0 ? `${r.totalPrice} tỷ` : '—'}</td>}
+                    <td style={{ textAlign: 'right' }} className={S.compPrice}>{r.pricePerM2 || '—'}</td>
+                  </tr>
+                )
+              })}
+              {comparison?.length > 0 && price.pricePerM2 && (
+                <tr className={S.thisLot}>
+                  <td>🏷️ Lô này</td>
+                  {hasExpanded && <td style={{ fontSize: '0.82rem' }}>{pub.legal?.landType || '—'}</td>}
+                  {hasExpanded && <td style={{ textAlign: 'right', fontSize: '0.82rem' }}>{price.area > 0 ? `${price.area} m²` : '—'}</td>}
+                  {hasExpanded && <td style={{ textAlign: 'right', fontSize: '0.82rem' }}>{price.total || '—'}</td>}
+                  <td style={{ textAlign: 'right' }} className={S.compPrice}>{price.pricePerM2}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   )
 }
 
-function PotentialSection({ pub }) {
+function PotentialSection({ pub, onImgClick }) {
   const { potential } = pub
   if (!potential?.text && !potential?.images?.length) return null
 
@@ -313,7 +354,8 @@ function PotentialSection({ pub }) {
         {potential.images?.length > 0 && (
           <div className={S.potImages}>
             {potential.images.map((url, i) => (
-              <img key={i} src={url} alt={`Tiềm năng ${i + 1}`} className={S.potImg} loading="lazy" />
+              <img key={i} src={url} alt={`Tiềm năng ${i + 1}`} className={S.potImg} loading="lazy"
+                onClick={() => onImgClick?.(url)} />
             ))}
           </div>
         )}
@@ -412,6 +454,7 @@ export default function LandPage({ previewData }) {
   const [property, setProperty] = useState(previewData || null)
   const [config, setConfig]     = useState(null)
   const [status, setStatus]     = useState('loading') // 'loading' | 'ok' | 'notfound' | 'blocked'
+  const [lightboxSrc, setLightboxSrc] = useState(null)
   const { theme, toggle, isDark } = useTheme()
 
   // SEO — runs whenever property resolves; useSEO handles null gracefully
@@ -511,16 +554,19 @@ export default function LandPage({ previewData }) {
         <HeroSection pub={pub} onCall={handleCall} onZalo={handleZalo} />
         <WhyBuyNow   pub={pub} />
         <CoreInfo    pub={pub} />
-        <ProofSection pub={pub} />
+        <ProofSection pub={pub} onImgClick={setLightboxSrc} />
         <ComparisonSection pub={pub} />
-        <PotentialSection  pub={pub} />
+        <PotentialSection  pub={pub} onImgClick={setLightboxSrc} />
         <MapSection        pub={pub} />
         <FinalCTA pub={pub} onCall={handleCall} onZalo={handleZalo} />
       </ErrorBoundary>
 
+      {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
+
       <footer className={S.footer}>
         <div className={S.footerBrand}>{appCfg.brandName}</div>
-        <div>{appCfg.footerText}</div>
+        {appCfg.footerText && <div>{appCfg.footerText}</div>}
+        <div className={S.footerDisclaimer}>Thông tin chỉ mang tính tham khảo, không phải cam kết pháp lý.</div>
       </footer>
 
       <FloatingContact contact={pub.contact} onCall={handleCall} onZalo={handleZalo} />

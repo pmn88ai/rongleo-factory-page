@@ -24,6 +24,19 @@
   overflow-x: auto;
 }
 
+.backBtn {
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.backBtn:hover { background: var(--bg-soft); color: var(--text); }
+
 .topBarTitle {
   font-weight: 700;
   font-size: 0.9rem;
@@ -206,7 +219,7 @@
   width: 100%;
 }
 .input:focus, .textarea:focus, .select:focus { border-color: var(--gold); }
-.textarea { resize: vertical; min-height: 80px; line-height: 1.55; }
+.textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
